@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">RootVPN</string>
+    <string name="widget_name">RootVPN</string>
+    <string name="pref_cat_vpnsettings">VPN Settings</string>
+    <string name="pref_vpnserver">VPN Server</string>
+    <string name="pref_vpnserver_default">myvpnserver.com</string>
+    <string name="pref_vpnport">VPN Port</string>
+    <string name="pref_vpnport_default">1723</string>
+    <string name="pref_username">Username</string>
+    <string name="pref_username_default">vpnuserid</string>
+    <string name="pref_password">Password</string>
+</resources>

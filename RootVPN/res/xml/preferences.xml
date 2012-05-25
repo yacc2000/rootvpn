@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android" >
+
+    <PreferenceCategory android:title="@string/pref_cat_vpnsettings" >
+        <EditTextPreference
+            android:defaultValue="@string/pref_vpnserver_default"
+            android:key="@string/pref_vpnserver"
+            android:title="@string/pref_vpnserver" />
+        <EditTextPreference
+            android:defaultValue="@string/pref_vpnport_default"
+            android:key="@string/pref_vpnport"
+            android:title="@string/pref_vpnport" />
+        <EditTextPreference
+            android:defaultValue="@string/pref_username_default"
+            android:key="@string/pref_username"
+            android:title="@string/pref_username" />
+        <EditTextPreference
+            android:key="@string/pref_password"
+            android:title="@string/pref_password" 
+            android:password="true"/>
+    </PreferenceCategory>
+
+</PreferenceScreen>
