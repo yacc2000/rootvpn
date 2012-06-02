@@ -109,6 +109,7 @@ public class RootVPNService extends Service {
 							defineIntent = new Intent(VPNRequestReceiver.ON_INTENT);
 						}
 						else {
+							//TODO: Probably never reach this code, no false value returns from turnOffVPN
 							updateViews.setImageViewResource(R.id.widgetImage, R.drawable.problem);
 							defineIntent = new Intent(VPNRequestReceiver.OFF_INTENT);
 						}
@@ -204,9 +205,10 @@ public class RootVPNService extends Service {
 				return true;
 			}
 			else {
+				//If no process to kill exists, VPN is already off, that's fine.
 				log("No process found to kill for mtpd.");
 				log("VPN connection terminated: fail, returning false.");
-				return false;
+				return true;
 			}
 		}
 		
