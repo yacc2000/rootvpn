@@ -1,6 +1,11 @@
 package com.donn.rootvpn;
 
+import java.util.StringTokenizer;
+
 import com.donn.rootvpn.ShellCommand.CommandResult;
+
+//TODO: Add notification in bar when VPN connected
+//TODO: figure out routing so that when VPN connected internet still works
 
 import android.app.PendingIntent;
 import android.app.Service;
@@ -9,6 +14,8 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.ConnectivityManager;
+import android.net.NetworkInfo;
 import android.os.AsyncTask;
 import android.os.IBinder;
 import android.preference.PreferenceManager;
@@ -151,8 +158,16 @@ public class RootVPNService extends Service {
 		}
 		
 		private boolean turnOnVPN() {
+			ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+			NetworkInfo ni = cm.getActiveNetworkInfo();
+			NetworkInfo[] nia = cm.getAllNetworkInfo();
+			int netpreference = cm.getNetworkPreference();
+			//cm.requestRouteToHost(ConnectivityManager.TYPE_ETHERNET, 1 );
+			//cm.setNetworkPreference(1);
+
 			log("Starting mtpd...");
 			
+			//TODO: may also be on wifi (wlan0)
 			cmd.su.run("mtpd rmnet0 pptp " + 
 					vpnServer + " " + vpnPort + 
 					" name " + vpnUser + 
@@ -173,11 +188,37 @@ public class RootVPNService extends Service {
 			}
 
 			if (count < 30) {
-				log("route command being issued...");
-				CommandResult r = cmd.su.runWaitFor("route add default dev ppp0");
-				log("route execution code: " + r.exit_value);
+				int exitValues = 0;
 				
-				if (r.exit_value == 0) {
+				log("route 1st command being issued...");
+				CommandResult r = cmd.su.runWaitFor("ip route add 0.0.0.0/1 dev ppp0");
+				log("route 1st execution code: " + r.exit_value);
+				
+				exitValues = exitValues + r.exit_value;
+				
+				log("route 2nd command being issued...");
+				r = cmd.su.runWaitFor("ip route add 128.0.0.0/1 dev ppp0");
+				log("route 2nd execution code: " + r.exit_value);
+
+				exitValues = exitValues + r.exit_value;
+				
+				log("getting DNS server to use for VPN server's IP"); 
+				//r = cmd.su.runWaitFor("ip route | grep 'dev ppp0  proto kernel'");
+				r = cmd.su.runWaitFor("/system/bin/sh -c 'ip route | grep \"dev ppp0  proto kernel\"'");
+				result = r.stdout;
+				log("got DNS server from ip route: " + result);
+				StringTokenizer tokenizer = new StringTokenizer(result, " ");
+				String dnsServer = tokenizer.nextToken();
+
+				exitValues = exitValues + r.exit_value;
+				
+				log("setting DNS server to VPN server's IP");
+				r = cmd.su.runWaitFor("setprop net.dns1 " + dnsServer);
+				log("got DNS server from ip route: " + r.exit_value);
+				
+				exitValues = exitValues + r.exit_value;
+
+				if (exitValues == 0) {
 					log("VPN connection started: success, returning true.");
 					return true;
 				}
@@ -193,6 +234,15 @@ public class RootVPNService extends Service {
 		}
 		
 		private boolean turnOffVPN() {
+			ConnectivityManager cm = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+			NetworkInfo ni = cm.getActiveNetworkInfo();
+			NetworkInfo[] nia = cm.getAllNetworkInfo();
+			int netpreference = cm.getNetworkPreference();
+			//cm.requestRouteToHost(ConnectivityManager.TYPE_ETHERNET, 1 );
+			//cm.setNetworkPreference(1);
+			
+			int exitValues = 0;
+			
 			CommandResult r = cmd.su.runWaitFor("pidof mtpd");
 			log("pidof execution code: " + r.exit_value);
 			
@@ -202,13 +252,34 @@ public class RootVPNService extends Service {
 				log("Killed mtpd");
 				log("kill -9 execution code: " + r.exit_value);
 				log("VPN connection terminated: success, returning true.");
-				return true;
 			}
 			else {
 				//If no process to kill exists, VPN is already off, that's fine.
 				log("No process found to kill for mtpd.");
 				log("VPN connection terminated: fail, returning false.");
+			}
+			
+			//TODO: (or Wifi value)
+			log("getting mobile DNS server to use for DNS ");
+			r = cmd.su.runWaitFor("getprop net.rmnet0.dns1");
+			String result = r.stdout;
+			log("got DNS server from system properties: " + result);
+
+			exitValues = exitValues + r.exit_value;
+			
+			log("setting DNS server mobile DNS server");
+			r = cmd.su.runWaitFor("setprop net.dns1 " + result);
+			log("set net.dns1 propery success: " + r.exit_value);
+			
+			exitValues = exitValues + r.exit_value;
+			
+			if (exitValues == 0) {
+				log("VPN connection stopped: success, returning true.");
 				return true;
+			}
+			else {
+				log("VPN connection stopped: fail, returning false.");
+				return false;
 			}
 		}
 		
