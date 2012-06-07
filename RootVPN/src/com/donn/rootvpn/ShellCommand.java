@@ -73,12 +73,14 @@ public class ShellCommand {
         public Process run(String s) {
             Process process = null;
             try {
+            	L.log(this, "Running command: " + s);
                 process = Runtime.getRuntime().exec(SHELL);
                 DataOutputStream toProcess = new DataOutputStream(process.getOutputStream());
                 toProcess.writeBytes("exec " + s + "\n");
                 toProcess.flush();
-            } catch(Exception e) {
-                Log.e(TAG, "Exception while trying to run: '" + s + "' " + e.getMessage());
+            } 
+            catch(Exception e) {
+                L.err(this, "Exception while trying to run: '" + s + "' " + e.getMessage());
                 process = null;
             }
             return process;
@@ -112,14 +114,23 @@ public class ShellCommand {
             if (process != null) {
                 try {
                     exit_value = process.waitFor();
-                    
+
                     stdout = getStreamLines(process.getInputStream());
+                	if (stdout != null) {
+                		L.log(this, "Command std output: " + stdout.replaceAll("\n", " "));
+                	}
+
                     stderr = getStreamLines(process.getErrorStream());
-                    
-                } catch(InterruptedException e) {
-                    Log.e(TAG, "runWaitFor " + e.toString());
-                } catch(NullPointerException e) {
-                    Log.e(TAG, "runWaitFor " + e.toString());
+                	if (stderr != null) {
+                		L.log(this, "Command err output: " + stderr.replaceAll("\n", " "));
+                	}
+                	
+                } 
+                catch(InterruptedException e) {
+                	L.err(this, "Exception while running command: " + stderr);
+                } 
+                catch(NullPointerException e) {
+                	L.err(this, "Null pointer while running command: " + e.toString());
                 }
             }
             return new CommandResult(exit_value, stdout, stderr);

@@ -64,3 +64,30 @@ setprop net.dns2 172.16.145.103 (or whatever is set in net.rmnet0.dns1)
 
 This file appears to set net.dns1
 /frameworks/base/services/java/com/android/server/ConnectivityService.java
+
+Deleting a default route:
+0.0.0.0/1 dev ppp0  scope link
+shell@android:/ # ip route del 0.0.0.0/1 dev ppp0
+shell@android:/ # busybox route
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+
+Deleting a non-default route:
+shell@android:/ # busybox route
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+default         *               128.0.0.0       U     0      0        0 ppp0
+default         10.73.52.1      0.0.0.0         UG    0      0        0 rmnet0
+10.73.52.0      *               255.255.255.0   U     0      0        0 rmnet0
+10.73.52.1      *               255.255.255.255 UH    0      0        0 rmnet0
+128.0.0.0       *               128.0.0.0       U     0      0        0 ppp0
+192.168.0.1     *               255.255.255.255 UH    0      0        0 ppp0
+shell@android:/ # ip route del 128.0.0.0/1 dev ppp0
+shell@android:/ # busybox route
+Kernel IP routing table
+Destination     Gateway         Genmask         Flags Metric Ref    Use Iface
+default         *               128.0.0.0       U     0      0        0 ppp0
+default         10.206.104.1    0.0.0.0         UG    0      0        0 rmnet0
+10.206.104.0    *               255.255.255.0   U     0      0        0 rmnet0
+10.206.104.1    *               255.255.255.255 UH    0      0        0 rmnet0
+192.168.0.1     *               255.255.255.255 UH    0      0        0 ppp0
