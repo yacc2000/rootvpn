@@ -322,8 +322,7 @@ public class RootVPNService extends Service {
 		private void setPreVPNDNSServer() throws VPNException {
 			L.log(this, "Getting DNS server system was using before VPN");
 
-			//Use dns2 in case dns1 was set and never correctly reset. We never touch dns2, so it should be clean
-			CommandResult result = cmd.su.runWaitFor("/system/bin/sh -c 'getprop net.dns2'");
+			CommandResult result = cmd.su.runWaitFor("/system/bin/sh -c 'getprop net.dns1'");
 			String resultString = result.stdout;
 			if (result.success()) {
 				L.log(this, "Got pre-VPN DNS server from ip route: " + resultString);
