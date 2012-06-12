@@ -24,6 +24,7 @@
                 <action android:name="com.donn.rootvpn.OFF" />
                 <action android:name="com.donn.rootvpn.CONNECTED" />
                 <action android:name="com.donn.rootvpn.DISCONNECTED" />
+                <action android:name="com.donn.rootvpn.COULDNOTCONNECT" />
             </intent-filter>
         </receiver>
         

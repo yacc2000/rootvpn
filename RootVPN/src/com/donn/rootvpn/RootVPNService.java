@@ -4,8 +4,8 @@ import java.util.StringTokenizer;
 
 import com.donn.rootvpn.ShellCommand.CommandResult;
 
-//TODO: Add notification in bar when VPN connected
-
+import android.app.Notification;
+import android.app.NotificationManager;
 import android.app.PendingIntent;
 import android.app.Service;
 import android.appwidget.AppWidgetManager;
@@ -20,6 +20,8 @@ import android.widget.RemoteViews;
 
 public class RootVPNService extends Service {
 
+	private static final int NOTIFICATION_ID = 19801980;
+	
 	private ShellCommand cmd = new ShellCommand();
 	private static String preVPNDNSServer;
 	private static boolean isConnected = false;
@@ -52,6 +54,7 @@ public class RootVPNService extends Service {
 		private String vpnPort;
 		private String vpnUser;
 		private String vpnPassword;
+		private int vpnTimeout;
 
 		public RootVPNTask(Context context, Intent intent) {
 			this.context = context;
@@ -76,7 +79,7 @@ public class RootVPNService extends Service {
 					if (intent.getAction().equals(VPNRequestReceiver.ON_INTENT)) {
 
 						L.log(this, "Got the : " + VPNRequestReceiver.ON_INTENT + " intent");
-
+						
 						try {
 							initialActions();
 						}
@@ -94,6 +97,8 @@ public class RootVPNService extends Service {
 
 							L.log(this, "VPN is not connected, connecting now");
 
+							sendNotification("VPN Is Connecting...", R.drawable.disconnected_small);
+							
 							if (turnOnVPN()) {
 								L.log(this, "VPN was turned on. Setting next action to OFF");
 								sendBroadcast(new Intent(VPNRequestReceiver.CONNECTED_INTENT));
@@ -101,6 +106,7 @@ public class RootVPNService extends Service {
 							}
 							else {
 								L.log(this, "VPN failed to turn on. Setting next action to ON");
+								sendBroadcast(new Intent(VPNRequestReceiver.COULD_NOT_CONNECT_INTENT));
 								updateViews.setImageViewResource(R.id.widgetImage, R.drawable.problem);
 								defineIntent = new Intent(VPNRequestReceiver.ON_INTENT);
 							}
@@ -133,16 +139,17 @@ public class RootVPNService extends Service {
 							defineIntent = new Intent(VPNRequestReceiver.ON_INTENT);
 						}
 						else {
-							// TODO: Probably never reach this code, no false
-							// value returns from turnOffVPN
+							L.log(this, "There was an error turning off VPN. Assumed disconnected. Setting next action to ON");
 							updateViews.setImageViewResource(R.id.widgetImage, R.drawable.problem);
-							defineIntent = new Intent(VPNRequestReceiver.OFF_INTENT);
+							sendBroadcast(new Intent(VPNRequestReceiver.DISCONNECTED_INTENT));
+							defineIntent = new Intent(VPNRequestReceiver.ON_INTENT);
 						}
 					}
 					else if (intent.getAction().equals(VPNRequestReceiver.CONNECTED_INTENT)) {
 						L.log(this, "Got the : " + intent.getAction() + " intent. Setting connected=true");
 						L.log(this, "Set next action to OFF");
 						isConnected = true;
+						sendNotification("VPN is connected", R.drawable.connected_small);
 						updateViews.setImageViewResource(R.id.widgetImage, R.drawable.connected);
 						defineIntent = new Intent(VPNRequestReceiver.OFF_INTENT);
 					}
@@ -150,9 +157,19 @@ public class RootVPNService extends Service {
 						L.log(this, "Got the : " + intent.getAction() + " intent. Setting connected=false");
 						L.log(this, "Set next action to ON");
 						isConnected = false;
+						cancelNotification();
 						updateViews.setImageViewResource(R.id.widgetImage, R.drawable.disconnected);
 						defineIntent = new Intent(VPNRequestReceiver.ON_INTENT);
 					}
+					else if (intent.getAction().equals(VPNRequestReceiver.COULD_NOT_CONNECT_INTENT)) {
+						L.log(this, "Got the : " + intent.getAction() + " intent. Setting connected=false");
+						L.log(this, "Set next action to ON");
+						isConnected = false;
+						cancelNotification();
+						updateViews.setImageViewResource(R.id.widgetImage, R.drawable.problem);
+						defineIntent = new Intent(VPNRequestReceiver.ON_INTENT);
+					}
+
 				}
 				else {
 					L.log(this, "Intent action was null, setting next action to ON");
@@ -194,13 +211,14 @@ public class RootVPNService extends Service {
 			L.log(this, "Turning on VPN");
 			
 			try {
+				setPreVPNDNSServer();
+				
 				String currentNetworkInterface = getCurrentNetworkInterface();
 
 				startMtpdService(currentNetworkInterface);
 				waitForMtpdServiceStart();
 
 				setupVPNRoutingTables();
-				setPreVPNDNSServer();
 				String pppDNSServer = getPPPDNSServer();
 				setDNS(pppDNSServer);
 
@@ -219,19 +237,28 @@ public class RootVPNService extends Service {
 		private boolean turnOffVPN() {
 			L.log(this, "Turning off VPN");
 			
-			try {
-				killMtpdService();
-				resetDNS();
+			boolean killPppd = true;
+			boolean resetDNS = true;
+			boolean cleanupRoutes = true;
+			boolean cleanupInterfaces = true;
 
+			killPppd = killPppdService();
+			resetDNS = resetDNS();
+			cleanupRoutes = cleanupRoutes();
+			cleanupInterfaces = cleanupInterfaces();
+				
+			if ( (killPppd || resetDNS || cleanupRoutes || cleanupInterfaces) == false ) {
+				L.err(this, "Something failed when shutting down VPN");
+				L.err(this, "Killed PPPD: " + killPppd);
+				L.err(this, "Reset DNS: " + resetDNS);
+				L.err(this, "Cleanup Routes: " + cleanupRoutes);
+				L.err(this, "Cleanup interfaces: " + cleanupInterfaces);
+				return false;
+			}
+			else {
 				L.log(this, "VPN connection stopped: success, returning true.");
 				return true;
 			}
-			catch (VPNException e) {
-				L.err(this, "VPNException received, terminating RootVPNService");
-				L.err(e.getSource(), e.getMessage());
-				return false;
-			}
-
 		}
 		
 		private void initialActions() throws VPNException {
@@ -242,6 +269,7 @@ public class RootVPNService extends Service {
 			vpnPort = preferences.getString(getString(R.string.pref_vpnport), "1723");
 			vpnUser = preferences.getString(getString(R.string.pref_username), "vpn");
 			vpnPassword = preferences.getString(getString(R.string.pref_password), "password");
+			vpnTimeout = Integer.parseInt(preferences.getString(getString(R.string.pref_timeout), "30"));
 		}
 
 		private String getCurrentNetworkInterface() throws VPNException {
@@ -288,14 +316,14 @@ public class RootVPNService extends Service {
 			String resultString = result.stdout;
 			
 			int count = 0;
-			for (; count < 30 && (resultString == null || !resultString.contains("UP")); count++) {
+			for (; count < vpnTimeout && (resultString == null || !resultString.contains("UP")); count++) {
 				// wait until mtpd is running
 				sleep(1);
 				L.log(this, "Still waiting for mtpd to initialize...");
 				result = cmd.su.runWaitFor("/system/bin/sh -c 'netcfg | grep ppp0'");
 				resultString = result.stdout;
 			}
-			if (result.success() && count < 30) {
+			if (result.success() && count < vpnTimeout) {
 				L.log(this, "mtpd initialized successfully after " + count + " seconds");
 			}
 			else {
@@ -324,7 +352,7 @@ public class RootVPNService extends Service {
 
 			CommandResult result = cmd.su.runWaitFor("/system/bin/sh -c 'getprop net.dns1'");
 			String resultString = result.stdout;
-			if (result.success()) {
+			if (result.success() && resultString != null) {
 				L.log(this, "Got pre-VPN DNS server from ip route: " + resultString);
 
 				StringTokenizer tokenizer = new StringTokenizer(resultString, " ");
@@ -363,22 +391,30 @@ public class RootVPNService extends Service {
 			return dnsServer;
 		}
 
-		private void setDNS(String dnsValue) throws VPNException {
+		private boolean setDNS(String dnsValue) {
 			L.log(this, "Setting DNS server to: " + dnsValue);
+			
+			if (dnsValue != null) {
 
-			CommandResult result = cmd.su.runWaitFor("setprop net.dns1 " + dnsValue);
-
-			if (result.success()) {
-				L.log(this, "Successfully set DNS server from ip route: " + dnsValue);
-				incrementDNSChangeValue();
+				CommandResult result = cmd.su.runWaitFor("setprop net.dns1 " + dnsValue);
+		
+				if (result.success()) {
+					L.log(this, "Successfully set DNS server from ip route: " + dnsValue);
+					return incrementDNSChangeValue();
+				}
+				else {
+					L.err(this, "Unable to set DNS server in properties: " + result.stderr + " "
+							+ result.stdout);
+					return false;
+				}
 			}
 			else {
-				throw new VPNException(this, "Unable to set DNS server in properties: " + result.stderr + " "
-						+ result.stdout);
+				L.err(this, "DNS value was null, could not set back to original value.");
+				return false;
 			}
 		}
 
-		private void incrementDNSChangeValue() throws VPNException {
+		private boolean incrementDNSChangeValue() {
 			L.log(this, "Getting DNS increment value");
 			CommandResult resultOne = cmd.su.runWaitFor("getprop net.dnschange");
 			String resultOneString = resultOne.stdout;
@@ -395,52 +431,114 @@ public class RootVPNService extends Service {
 
 				if (resultTwo.success()) {
 					L.log(this, "Success in set dnschange value: " + dnsChange);
+					return true;
 				}
 				else {
-					throw new VPNException(this, "Unable to set dnschange in properties: " + resultTwo.stderr + " "
+					L.err(this, "Unable to set dnschange in properties: " + resultTwo.stderr + " "
 							+ resultTwo.stdout);
+					return false;
 				}
 			}
 			else {
-				throw new VPNException(this, "Unable to get dnschange in properties: " + resultOne.stderr + " "
+				L.err(this, "Unable to get dnschange in properties: " + resultOne.stderr + " "
 						+ resultOne.stdout);
+				return false;
+			}
+		}
+		
+		private boolean killPppdService() {
+			L.log(this, "Killing pppd service");
+			
+			L.log(this, "Killing pppd if present");
+			CommandResult resultTwo = cmd.su.runWaitFor("kill -15 $(pidof pppd)");
+			L.log(this, "Killed pppd result: " + resultTwo.stdout + " " + resultTwo.stderr);
+					
+			if (resultTwo.success()) {
+				L.log(this, "VPN connection terminated: success, returning true.");
+				return true;
+			}
+			else {
+				L.log(this, "No process found to kill for pppd.");
+				return false;
 			}
 		}
 
-		private void killMtpdService() throws VPNException {
-			L.log(this, "Killing mtpd service");
-			
-			CommandResult resultOne = cmd.su.runWaitFor("pidof mtpd");
+		private boolean resetDNS() {
+			return setDNS(preVPNDNSServer);
+		}
 		
-			if (resultOne.success()) {
-				if (resultOne.stdout != null) {
-					L.log(this, "Killing mtpd: pid=" + resultOne.stdout);
-					CommandResult resultTwo = cmd.su.runWaitFor("kill -9 " + resultOne.stdout);
-					L.log(this, "Killed mtpd");
-					
-					if (resultTwo.success()) {
-						L.log(this, "VPN connection terminated: success, returning true.");
+		private boolean cleanupRoutes() {
+			L.log(this, "Cleaning up VPN routing tables if necessary");
+
+			CommandResult resultGrepRoute = cmd.su.runWaitFor("/system/bin/sh -c 'ip route | grep ppp0'");
+			
+			if (resultGrepRoute.success()) {
+				String resultString = resultGrepRoute.stdout;
+				if (resultString != null) {
+					StringTokenizer resultLines = new StringTokenizer(resultString, "\n");
+					if (resultLines.hasMoreTokens()) {
+						String pppRoute = resultLines.nextToken();
+						pppRoute = pppRoute.substring(0, pppRoute.indexOf(' '));
+						L.log(this, "Removing Route for: " + pppRoute);
+						CommandResult result = cmd.su.runWaitFor("ip route del " + pppRoute + " dev ppp0");
+						if (result.success()) {
+							L.log(this, "Successfully removed route for: " + pppRoute);
+						}
+						else {
+							L.err(this,  "Could not remove route for: " + pppRoute);
+							return false;
+						}
 					}
 					else {
-						throw new VPNException(this, "Unable to kill mtpd: " + resultTwo.stderr + " "
-								+ resultTwo.stdout);
+						L.log(this, "Found no lines in grep route.");
 					}
 				}
 				else {
-					// If no process to kill exists, VPN is already off, that's fine.
-					L.log(this, "No process found to kill for mtpd.");
-					L.log(this, "VPN connection terminated: fail, returning false.");
+					L.log(this, "Grep route string was null");
 				}
 			}
 			else {
-				// If no process to kill exists, VPN is already off, that's fine.
-				L.log(this, "pidof mtpd error: No process found to kill for mtpd.");
-				L.log(this, "VPN connection terminated: fail, returning false.");
+				L.log(this, "Found no existing routes that need to be deleted.");
 			}
+			
+			return true;
 		}
-
-		private void resetDNS() throws VPNException {
-			setDNS(preVPNDNSServer);
+		
+		private boolean cleanupInterfaces() {
+			L.log(this, "Cleaning up VPN interface if necessary");
+			
+			CommandResult resultGrepInterface = cmd.su.runWaitFor("/system/bin/sh -c 'netcfg | grep ppp'");
+			
+			if (resultGrepInterface.success()) {
+				String resultString = resultGrepInterface.stdout;
+				if (resultString != null) {
+					StringTokenizer resultLines = new StringTokenizer(resultString, "\n");
+					if (resultLines.hasMoreTokens()) {
+						String pppInterface = resultLines.nextToken();
+						pppInterface = pppInterface.substring(0, pppInterface.indexOf(' '));
+						L.log(this, "Removing Interface for: " + pppInterface);
+						CommandResult result = cmd.su.runWaitFor("ifconfig " + pppInterface + " unplumb");
+						if (result.success()) {
+							L.log(this, "Successfully removed interface for: " + pppInterface);
+						}
+						else {
+							L.err(this,  "Could not remove interface for: " + pppInterface);
+							return false;
+						}
+					}
+					else {
+						L.log(this, "Found no lines in grep interface.");
+					}
+				}
+				else {
+					L.log(this, "Grep interface string was null");
+				}
+			}
+			else {
+				L.log(this, "Found no existing interfaces that need to be deleted.");
+			}
+			
+			return true;
 		}
 
 		private void sleep(int seconds) {
@@ -452,6 +550,29 @@ public class RootVPNService extends Service {
 			catch (InterruptedException e) {
 				e.printStackTrace();
 			}
+		}
+		
+		private void sendNotification(String notificationString, int imageID) {
+			NotificationManager notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+			
+			Context context = getApplicationContext();
+			CharSequence contentTitle = "RootVPN Notification - ";
+			
+			Notification.Builder nb = new Notification.Builder(context);
+			nb.setSmallIcon(imageID);
+			nb.setTicker(notificationString); 
+			nb.setAutoCancel(true);
+			nb.setContentTitle(contentTitle);
+			nb.setContentText(notificationString);
+
+			Notification notification = nb.getNotification();
+
+			notificationManager.notify(NOTIFICATION_ID, notification);
+		}
+		
+		private void cancelNotification() {
+			NotificationManager notificationManager = (NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+			notificationManager.cancel(NOTIFICATION_ID);
 		}
 	}
 

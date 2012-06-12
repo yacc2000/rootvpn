@@ -91,3 +91,9 @@ default         10.206.104.1    0.0.0.0         UG    0      0        0 rmnet0
 10.206.104.0    *               255.255.255.0   U     0      0        0 rmnet0
 10.206.104.1    *               255.255.255.255 UH    0      0        0 rmnet0
 192.168.0.1     *               255.255.255.255 UH    0      0        0 ppp0
+
+kill -15 $(pidof pppd) 
+seems to be a more graceful way to kill the VPN connection and delete routes
+
+ifconfig ppp0 unplumb 
+will remove the ppp0 interface from netcfg

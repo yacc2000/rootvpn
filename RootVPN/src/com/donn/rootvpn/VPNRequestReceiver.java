@@ -8,6 +8,7 @@ public class VPNRequestReceiver extends BroadcastReceiver {
 
 	public static final String ON_INTENT = "com.donn.rootvpn.ON";
 	public static final String CONNECTED_INTENT = "com.donn.rootvpn.CONNECTED";
+	public static final String COULD_NOT_CONNECT_INTENT = "com.donn.rootvpn.COULDNOTCONNECT";
 	public static final String OFF_INTENT = "com.donn.rootvpn.OFF";
 	public static final String DISCONNECTED_INTENT = "com.donn.rootvpn.DISCONNECTED";
 	
