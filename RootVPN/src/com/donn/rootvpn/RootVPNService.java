@@ -13,6 +13,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.net.http.SslCertificate.DName;
 import android.os.AsyncTask;
 import android.os.IBinder;
 import android.preference.PreferenceManager;
@@ -23,7 +24,7 @@ public class RootVPNService extends Service {
 	private static final int NOTIFICATION_ID = 19801980;
 	
 	private ShellCommand cmd = new ShellCommand();
-	private static String preVPNDNSServer;
+	private static String preVPNDNSServer = null;
 	private static boolean isConnected = false;
 
 	@Override
@@ -244,6 +245,7 @@ public class RootVPNService extends Service {
 
 			killPppd = killPppdService();
 			resetDNS = resetDNS();
+			clearPreVPNDNSServer();
 			cleanupRoutes = cleanupRoutes();
 			cleanupInterfaces = cleanupInterfaces();
 				
@@ -259,6 +261,7 @@ public class RootVPNService extends Service {
 				L.log(this, "VPN connection stopped: success, returning true.");
 				return true;
 			}
+			
 		}
 		
 		private void initialActions() throws VPNException {
@@ -366,6 +369,10 @@ public class RootVPNService extends Service {
 				throw new VPNException(this, "Unable to get pre-VPN DNS server from ip route: " + result.stderr + " "
 						+ result.stdout);
 			}
+		}
+		
+		private void clearPreVPNDNSServer() {
+			preVPNDNSServer = null;
 		}
 
 		private String getPPPDNSServer() throws VPNException {
