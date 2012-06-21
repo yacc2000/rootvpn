@@ -19,8 +19,8 @@ public class RootVPNActivity extends Activity {
 		Intent intent = new Intent();
 		intent.setClass(this, RootVPNService.class);
         startService(intent);
-		
-		setContentView(R.layout.main);
+        
+        setContentView(R.layout.main);
 	}
 	
 }
