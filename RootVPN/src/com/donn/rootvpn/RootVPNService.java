@@ -11,6 +11,7 @@ import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.SharedPreferences.Editor;
 import android.preference.PreferenceManager;
 import android.widget.RemoteViews;
 
@@ -21,14 +22,15 @@ public class RootVPNService extends IntentService {
 	private static final int NOTIFICATION_ID = 19801980;
 	
 	private ShellCommand cmd = new ShellCommand();
-	private static String preVPNDNSServer = null;
-	private static boolean isConnected = false;
-	
 	private String vpnServer;
 	private String vpnPort;
 	private String vpnUser;
 	private String vpnPassword;
 	private int vpnTimeout;
+	private String previousDNS;
+	private String previousDNSKey = "previousDNS";
+	private boolean isVPNConnected;
+	private String isVPNConnectedKey = "isVPNConnected";
 
 	public RootVPNService() {
 		super("RootVPNIntentService");
@@ -71,7 +73,7 @@ public class RootVPNService extends IntentService {
 					updateViews.setImageViewResource(R.id.widgetImage, R.drawable.wait);
 					manager.updateAppWidget(thisWidget, updateViews);
 
-					if (isConnected == false) {
+					if (isVPNConnected == false) {
 
 						L.log(this, "VPN is not connected, connecting now");
 
@@ -80,13 +82,13 @@ public class RootVPNService extends IntentService {
 						if (turnOnVPN()) {
 							L.log(this, "VPN was turned on. Setting next action to OFF");
 							sendBroadcast(new Intent(VPNRequestReceiver.CONNECTED_INTENT));
-							isConnected = true;
+							isVPNConnected = true;
 							defineIntent = new Intent(VPNRequestReceiver.OFF_INTENT);
 						}
 						else {
 							L.log(this, "VPN failed to turn on. Setting next action to ON");
 							sendBroadcast(new Intent(VPNRequestReceiver.COULD_NOT_CONNECT_INTENT));
-							isConnected = false;
+							isVPNConnected = false;
 							updateViews.setImageViewResource(R.id.widgetImage, R.drawable.problem);
 							defineIntent = new Intent(VPNRequestReceiver.ON_INTENT);
 						}
@@ -94,7 +96,7 @@ public class RootVPNService extends IntentService {
 					else {
 						L.log(this, "VPN is already connected. Setting next action to OFF");
 						sendBroadcast(new Intent(VPNRequestReceiver.CONNECTED_INTENT));
-						isConnected = true;
+						isVPNConnected = true;
 						defineIntent = new Intent(VPNRequestReceiver.OFF_INTENT);
 					}
 				}
@@ -117,14 +119,14 @@ public class RootVPNService extends IntentService {
 					if (turnOffVPN()) {
 						L.log(this, "VPN was turned off. Setting next action to ON");
 						sendBroadcast(new Intent(VPNRequestReceiver.DISCONNECTED_INTENT));
-						isConnected = false;
+						isVPNConnected = false;
 						defineIntent = new Intent(VPNRequestReceiver.ON_INTENT);
 					}
 					else {
 						L.log(this, "There was an error turning off VPN. Assumed disconnected. Setting next action to ON");
 						updateViews.setImageViewResource(R.id.widgetImage, R.drawable.problem);
 						sendBroadcast(new Intent(VPNRequestReceiver.DISCONNECTED_INTENT));
-						isConnected = false;
+						isVPNConnected = false;
 						defineIntent = new Intent(VPNRequestReceiver.ON_INTENT);
 					}
 				}
@@ -168,6 +170,8 @@ public class RootVPNService extends IntentService {
 		updateViews.setOnClickPendingIntent(R.id.widget, pendingIntent);
 
 		manager.updateAppWidget(thisWidget, updateViews);
+		
+		finalActions();
 
 		L.log(this, "Completed service thread");
 	}
@@ -222,7 +226,7 @@ public class RootVPNService extends IntentService {
 
 		killPppd = killPppdService();
 		resetDNS = resetDNS();
-		clearPreVPNDNSServer();
+		//clearPreVPNDNSServer();
 		cleanupRoutes = cleanupRoutes();
 		cleanupInterfaces = cleanupInterfaces();
 			
@@ -245,11 +249,25 @@ public class RootVPNService extends IntentService {
 		requestRoot();
 		
 		SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
-		vpnServer = preferences.getString(getString(R.string.pref_vpnserver), "none");
-		vpnPort = preferences.getString(getString(R.string.pref_vpnport), "1723");
-		vpnUser = preferences.getString(getString(R.string.pref_username), "vpn");
+		vpnServer = preferences.getString(getString(R.string.pref_vpnserver), getString(R.string.pref_vpnserver_default));
+		vpnPort = preferences.getString(getString(R.string.pref_vpnport), getString(R.string.pref_vpnport_default));
+		vpnUser = preferences.getString(getString(R.string.pref_username), getString(R.string.pref_username_default));
 		vpnPassword = preferences.getString(getString(R.string.pref_password), "password");
-		vpnTimeout = Integer.parseInt(preferences.getString(getString(R.string.pref_timeout), "30"));
+		vpnTimeout = Integer.parseInt(preferences.getString(getString(R.string.pref_timeout), getString(R.string.pref_timeout_default)));
+		isVPNConnected = preferences.getBoolean(isVPNConnectedKey, false);
+		L.log(this, "Read preference " + isVPNConnectedKey + ": " + isVPNConnected);
+		previousDNS = preferences.getString(previousDNSKey, null);
+		L.log(this, "Read preference " + previousDNSKey + ": " + previousDNSKey);
+	}
+	
+	private void finalActions() {
+		SharedPreferences preferences = PreferenceManager.getDefaultSharedPreferences(this);
+		Editor editor = preferences.edit();
+		L.log(this, "Writing " + isVPNConnectedKey + ": " + isVPNConnected);
+		editor.putBoolean(isVPNConnectedKey, isVPNConnected);
+		L.log(this, "Writing preference " + previousDNSKey + ": " + previousDNS);
+		editor.putString(previousDNSKey, previousDNS);
+		editor.commit();
 	}
 
 	private String getCurrentNetworkInterface() throws VPNException {
@@ -342,7 +360,7 @@ public class RootVPNService extends IntentService {
 
 			L.log(this, "Parsed pre-VPN DNS server from ip route: " + dnsServer);
 
-			preVPNDNSServer = dnsServer;
+			previousDNS = dnsServer;
 		}
 		else {
 			throw new VPNException(this, "Unable to get pre-VPN DNS server from ip route: " + result.stderr + " "
@@ -351,7 +369,7 @@ public class RootVPNService extends IntentService {
 	}
 	
 	private void clearPreVPNDNSServer() {
-		preVPNDNSServer = null;
+		previousDNS = null;
 	}
 
 	private String getPPPDNSServer() throws VPNException {
@@ -450,7 +468,7 @@ public class RootVPNService extends IntentService {
 	}
 
 	private boolean resetDNS() {
-		return setDNS(preVPNDNSServer);
+		return setDNS(previousDNS);
 	}
 	
 	private boolean cleanupRoutes() {
