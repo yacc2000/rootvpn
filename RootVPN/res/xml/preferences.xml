@@ -22,6 +22,10 @@
             android:defaultValue="@string/pref_timeout_default"
             android:key="@string/pref_timeout"
             android:title="@string/pref_timeout"/>
+        <EditTextPreference
+            android:defaultValue="@string/pref_retries_default"
+            android:key="@string/pref_retries"
+            android:title="@string/pref_retries"/>
     </PreferenceCategory>
 
 </PreferenceScreen>
