@@ -43,9 +43,7 @@ public class RootVPNService extends IntentService {
 	public void onHandleIntent(Intent intent) {
 		L.log(this, "Service is handling intent: " + intent);
 	
-		synchronized (intent) {
-			handleIntent(intent);	
-		}
+		handleIntent(intent);	
 	}
 
 	private void handleIntent(Intent intent) {
@@ -67,7 +65,7 @@ public class RootVPNService extends IntentService {
 					connectedClients++;
 					
 					L.log(this, "Got the : " + VPNRequestReceiver.ON_INTENT + " intent, " + 
-							connectedClients + " connected clients");
+							connectedClients + " connected client(s)");
 					
 					try {
 						initialActions();
@@ -114,7 +112,7 @@ public class RootVPNService extends IntentService {
 					
 					connectedClients--;
 					L.log(this, "Got the : " + VPNRequestReceiver.OFF_INTENT + " intent, " + 
-							connectedClients + " connected clients");
+							connectedClients + " connected client(s)");
 					
 					try {
 						initialActions();
@@ -143,6 +141,12 @@ public class RootVPNService extends IntentService {
 							isVPNConnected = false;
 							defineIntent = new Intent(VPNRequestReceiver.ON_INTENT);
 						}
+					}
+					else {
+						//If there are still connected clients, send broadcast indicating so
+						sendBroadcast(new Intent(VPNRequestReceiver.CONNECTED_INTENT));
+						isVPNConnected = true;
+						defineIntent = new Intent(VPNRequestReceiver.OFF_INTENT);
 					}
 				}
 				else if (intent.getAction().equals(VPNRequestReceiver.CONNECTED_INTENT)) {
@@ -183,7 +187,7 @@ public class RootVPNService extends IntentService {
 		defineIntent.setFlags(Intent.FLAG_INCLUDE_STOPPED_PACKAGES);
 		PendingIntent pendingIntent = PendingIntent.getBroadcast(this, 0, defineIntent, 0);
 		updateViews.setOnClickPendingIntent(R.id.widget, pendingIntent);
-
+ 
 		manager.updateAppWidget(thisWidget, updateViews);
 		
 		finalActions();
