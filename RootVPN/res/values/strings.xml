@@ -12,4 +12,6 @@
     <string name="pref_password">Password</string>
     <string name="pref_timeout_default">60</string>
     <string name="pref_timeout">Connection Timeout</string>
+    <string name="pref_retries_default">3</string>
+    <string name="pref_retries">Number of Retries</string>
 </resources>

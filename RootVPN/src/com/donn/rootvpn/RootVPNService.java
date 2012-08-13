@@ -1,5 +1,6 @@
 package com.donn.rootvpn;
 
+import java.util.Calendar;
 import java.util.StringTokenizer;
 
 import android.app.IntentService;
@@ -20,6 +21,7 @@ import com.donn.rootvpn.ShellCommand.CommandResult;
 public class RootVPNService extends IntentService {
 
 	private static final int NOTIFICATION_ID = 19801980;
+	private static int connectedClients = 0;
 	
 	private ShellCommand cmd = new ShellCommand();
 	private String vpnServer;
@@ -27,6 +29,7 @@ public class RootVPNService extends IntentService {
 	private String vpnUser;
 	private String vpnPassword;
 	private int vpnTimeout;
+	private int numberOfRetries;
 	private String previousDNS;
 	private String previousDNSKey = "previousDNS";
 	private boolean isVPNConnected;
@@ -39,7 +42,10 @@ public class RootVPNService extends IntentService {
 	@Override
 	public void onHandleIntent(Intent intent) {
 		L.log(this, "Service is handling intent: " + intent);
-		handleIntent(intent);
+	
+		synchronized (intent) {
+			handleIntent(intent);	
+		}
 	}
 
 	private void handleIntent(Intent intent) {
@@ -57,8 +63,11 @@ public class RootVPNService extends IntentService {
 
 			if (intentAction != null) {
 				if (intent.getAction().equals(VPNRequestReceiver.ON_INTENT)) {
-
-					L.log(this, "Got the : " + VPNRequestReceiver.ON_INTENT + " intent");
+					
+					connectedClients++;
+					
+					L.log(this, "Got the : " + VPNRequestReceiver.ON_INTENT + " intent, " + 
+							connectedClients + " connected clients");
 					
 					try {
 						initialActions();
@@ -103,6 +112,10 @@ public class RootVPNService extends IntentService {
 				else if (intent.getAction().equals(VPNRequestReceiver.OFF_INTENT)) {
 					L.log(this, "Got the : " + VPNRequestReceiver.OFF_INTENT + " intent");
 					
+					connectedClients--;
+					L.log(this, "Got the : " + VPNRequestReceiver.OFF_INTENT + " intent, " + 
+							connectedClients + " connected clients");
+					
 					try {
 						initialActions();
 					}
@@ -116,18 +129,20 @@ public class RootVPNService extends IntentService {
 					updateViews.setImageViewResource(R.id.widgetImage, R.drawable.wait);
 					manager.updateAppWidget(thisWidget, updateViews);
 
-					if (turnOffVPN()) {
-						L.log(this, "VPN was turned off. Setting next action to ON");
-						sendBroadcast(new Intent(VPNRequestReceiver.DISCONNECTED_INTENT));
-						isVPNConnected = false;
-						defineIntent = new Intent(VPNRequestReceiver.ON_INTENT);
-					}
-					else {
-						L.log(this, "There was an error turning off VPN. Assumed disconnected. Setting next action to ON");
-						updateViews.setImageViewResource(R.id.widgetImage, R.drawable.problem);
-						sendBroadcast(new Intent(VPNRequestReceiver.DISCONNECTED_INTENT));
-						isVPNConnected = false;
-						defineIntent = new Intent(VPNRequestReceiver.ON_INTENT);
+					if (connectedClients == 0) {
+						if (turnOffVPN()) {
+							L.log(this, "VPN was turned off. Setting next action to ON");
+							sendBroadcast(new Intent(VPNRequestReceiver.DISCONNECTED_INTENT));
+							isVPNConnected = false;
+							defineIntent = new Intent(VPNRequestReceiver.ON_INTENT);
+						}
+						else {
+							L.log(this, "There was an error turning off VPN. Assumed disconnected. Setting next action to ON");
+							updateViews.setImageViewResource(R.id.widgetImage, R.drawable.problem);
+							sendBroadcast(new Intent(VPNRequestReceiver.DISCONNECTED_INTENT));
+							isVPNConnected = false;
+							defineIntent = new Intent(VPNRequestReceiver.ON_INTENT);
+						}
 					}
 				}
 				else if (intent.getAction().equals(VPNRequestReceiver.CONNECTED_INTENT)) {
@@ -197,9 +212,20 @@ public class RootVPNService extends IntentService {
 			
 			String currentNetworkInterface = getCurrentNetworkInterface();
 
-			startMtpdService(currentNetworkInterface);
-			waitForMtpdServiceStart();
-
+			boolean mtpdStarted = false;
+			for (int i = 0; !mtpdStarted && i < numberOfRetries; i++) {
+				L.log(this, "Trying to start mtpd. Try " + (i+1) + " out of " + numberOfRetries);
+				startMtpdService(currentNetworkInterface);
+				mtpdStarted = waitForMtpdServiceStart();
+				if (!mtpdStarted) {
+					turnOffVPN();
+				}
+			}
+	
+			if (!mtpdStarted) {
+				throw new VPNException(this, "Unable to start mtpd after: (" + numberOfRetries + ") tries.");
+			}
+			
 			setupVPNRoutingTables();
 			String pppDNSServer = getPPPDNSServer();
 			setDNS(pppDNSServer);
@@ -254,6 +280,7 @@ public class RootVPNService extends IntentService {
 		vpnUser = preferences.getString(getString(R.string.pref_username), getString(R.string.pref_username_default));
 		vpnPassword = preferences.getString(getString(R.string.pref_password), "password");
 		vpnTimeout = Integer.parseInt(preferences.getString(getString(R.string.pref_timeout), getString(R.string.pref_timeout_default)));
+		numberOfRetries = Integer.parseInt(preferences.getString(getString(R.string.pref_retries), getString(R.string.pref_retries_default)));
 		isVPNConnected = preferences.getBoolean(isVPNConnectedKey, false);
 		L.log(this, "Read preference " + isVPNConnectedKey + ": " + isVPNConnected);
 		previousDNS = preferences.getString(previousDNSKey, null);
@@ -307,26 +334,35 @@ public class RootVPNService extends IntentService {
 		L.log(this, "mtpd was started...");
 	}
 
-	private void waitForMtpdServiceStart() throws VPNException {
+	private boolean waitForMtpdServiceStart() throws VPNException {
 		L.log(this, "Waiting for mtpd initialization...");
 
 		CommandResult result = cmd.su.runWaitFor("/system/bin/sh -c 'netcfg | grep ppp0'");
 		String resultString = result.stdout;
+		boolean timeExpired = false;
+		Calendar endTime = Calendar.getInstance();
+		endTime.add(Calendar.SECOND, vpnTimeout);
+		Calendar currentTime;
 		
-		int count = 0;
-		for (; count < vpnTimeout && (resultString == null || !resultString.contains("UP")); count++) {
+		while (timeExpired == false && (resultString == null || !resultString.contains("UP"))) {
 			// wait until mtpd is running
 			sleep(1);
 			L.log(this, "Still waiting for mtpd to initialize...");
 			result = cmd.su.runWaitFor("/system/bin/sh -c 'netcfg | grep ppp0'");
 			resultString = result.stdout;
+			currentTime = Calendar.getInstance();
+			if (currentTime.after(endTime)) {
+				L.log(this, "Time waiting for VPN expired: (" + vpnTimeout + ") seconds.");
+				timeExpired = true;
+			}
 		}
-		if (result.success() && count < vpnTimeout) {
-			L.log(this, "mtpd initialized successfully after " + count + " seconds");
+		if (result.success() && !timeExpired) {
+			L.log(this, "mtpd initialized successfully after " + vpnTimeout + " seconds");
+			return true;
 		}
 		else {
-			throw new VPNException(this, "mtpd failed to initialize after " + count + " seconds " + result.stderr
-					+ " " + result.stdout);
+			L.log(this, "mtpd failed to initialize after " + vpnTimeout + " seconds " + result.stderr + " " + result.stdout);
+			return false;
 		}
 	}
 
