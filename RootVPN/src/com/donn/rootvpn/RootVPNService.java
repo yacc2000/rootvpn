@@ -110,7 +110,11 @@ public class RootVPNService extends IntentService {
 				else if (intent.getAction().equals(VPNRequestReceiver.OFF_INTENT)) {
 					L.log(this, "Got the : " + VPNRequestReceiver.OFF_INTENT + " intent");
 					
-					connectedClients--;
+					
+					if (connectedClients > 0) {
+						connectedClients--;
+						L.log(this, "connected clients greater than 0, decrementing.");
+					}
 					L.log(this, "Got the : " + VPNRequestReceiver.OFF_INTENT + " intent, " + 
 							connectedClients + " connected client(s)");
 					
@@ -127,7 +131,7 @@ public class RootVPNService extends IntentService {
 					updateViews.setImageViewResource(R.id.widgetImage, R.drawable.wait);
 					manager.updateAppWidget(thisWidget, updateViews);
 
-					if (connectedClients == 0) {
+					if (connectedClients < 1) {
 						if (turnOffVPN()) {
 							L.log(this, "VPN was turned off. Setting next action to ON");
 							sendBroadcast(new Intent(VPNRequestReceiver.DISCONNECTED_INTENT));
@@ -144,6 +148,7 @@ public class RootVPNService extends IntentService {
 					}
 					else {
 						//If there are still connected clients, send broadcast indicating so
+						L.log(this, "There are still: " + connectedClients + " connected clients, maintaining connection.");
 						sendBroadcast(new Intent(VPNRequestReceiver.CONNECTED_INTENT));
 						isVPNConnected = true;
 						defineIntent = new Intent(VPNRequestReceiver.OFF_INTENT);
