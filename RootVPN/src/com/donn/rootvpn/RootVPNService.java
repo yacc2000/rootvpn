@@ -171,6 +171,8 @@ public class RootVPNService extends IntentService {
 				else if (intent.getAction().equals(VPNRequestReceiver.COULD_NOT_CONNECT_INTENT)) {
 					L.log(this, "Got the : " + intent.getAction() + " intent.");
 					L.log(this, "Set next action to ON");
+					L.log(this, "Connected client number was: " + connectedClients + " resetting to 0.");
+					connectedClients = 0;
 					cancelNotification();
 					updateViews.setImageViewResource(R.id.widgetImage, R.drawable.problem);
 					defineIntent = new Intent(VPNRequestReceiver.ON_INTENT);
