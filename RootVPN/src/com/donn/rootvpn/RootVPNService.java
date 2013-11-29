@@ -451,7 +451,9 @@ public class RootVPNService extends IntentService {
 	
 			if (result.success()) {
 				L.log(this, "Successfully set DNS server from ip route: " + dnsValue);
-				return incrementDNSChangeValue();
+				return true;
+				//KitKat 4.4 no longer uses DNS increment values
+				//return incrementDNSChangeValue();
 			}
 			else {
 				L.err(this, "Unable to set DNS server in properties: " + result.stderr + " "
@@ -473,7 +475,7 @@ public class RootVPNService extends IntentService {
 		if (resultOne.success()) {
 			L.log(this, "Success in get dnschange value: " + resultOne.stdout);
 
-			Integer intValue = Integer.parseInt(resultOneString);
+			Integer intValue = Integer.parseInt(resultOneString); 
 			int dnsChange = intValue.intValue();
 			dnsChange++;
 
